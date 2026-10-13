@@ -19,11 +19,13 @@ from caixa.money import cents_to_plain, format_brl, parse_amount_to_cents
 from caixa.ofx import OfxError
 from caixa.rotina import daily_status, last_sync_ok
 from caixa.timeutil import fmt_date, now_sp, today_sp
+from caixa.ui_gestao import P_DRE, P_INICIO, P_OBRIG, P_PROJ, page_dre, page_inicio, page_obrigacoes, page_projecao
 
 st.set_page_config(page_title="Caixa QCM", page_icon="💰", layout="wide")
 conn = connect()
 
-PAGES = ["Painel", "Rotina diária", "Importar extrato", "A identificar", "Investigar divergências", "Contas", "Exportar e backup"]
+PAGES = [P_INICIO, P_OBRIG, P_PROJ, P_DRE, "Rotina diária", "Importar extrato", "A identificar", "Investigar divergências",
+         "Saldos por conta", "Contas", "Exportar e backup"]
 
 
 def flash(msg: str, kind: str = "success"):
@@ -61,7 +63,7 @@ def accounts_or_stop():
 # ------------------------------------------------------------------------ Painel
 
 def page_painel():
-    st.header("Painel")
+    st.header("Saldos por conta")
     show_flash()
     accs = accounts_or_stop()
     as_of = st.date_input("Saldo calculado até", value=today_sp(), format="DD/MM/YYYY")
@@ -735,14 +737,16 @@ def autosync_on_open():
 
 def main():
     st.sidebar.title("💰 Caixa QCM")
-    page = st.sidebar.radio("Menu", PAGES, label_visibility="collapsed")
+    st.session_state.setdefault("menu", P_INICIO)
+    page = st.sidebar.radio("Menu", PAGES, key="menu", label_visibility="collapsed")
     n_unc = conn.execute("SELECT COUNT(*) FROM effective_tx e WHERE NOT EXISTS (SELECT 1 FROM classifications c WHERE c.tx_id=e.id)").fetchone()[0]
     st.sidebar.caption(f"{n_unc} a identificar")
     autosync_on_open()
-    if page != "Rotina diária":
-        banner()
+    if page not in (P_INICIO, "Rotina diária"):
+        banner()                                  # na tela Início, o que falta já aparece em "Precisa da sua atenção hoje"
     {
-        "Painel": page_painel, "Rotina diária": page_rotina, "Importar extrato": page_importar, "A identificar": page_identificar,
+        P_INICIO: lambda: page_inicio(conn), P_OBRIG: lambda: page_obrigacoes(conn), P_PROJ: lambda: page_projecao(conn),
+        P_DRE: lambda: page_dre(conn), "Saldos por conta": page_painel, "Rotina diária": page_rotina, "Importar extrato": page_importar, "A identificar": page_identificar,
         "Investigar divergências": page_investigar, "Contas": page_contas, "Exportar e backup": page_exportar,
     }[page]()
 

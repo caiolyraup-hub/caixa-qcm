@@ -12,6 +12,34 @@ Conciliação bancária local: importa extratos **OFX** do PagBank e da Conta Si
 
 Testes: `.venv\Scripts\python -m pytest -q`
 
+## Gestão financeira diária (a receber, a pagar, caixa projetado e DRE)
+
+O extrato bancário continua sendo a **fonte do que aconteceu**. Contratos e obrigações são o **previsto**. Quando o dinheiro aparece no banco, você *dá baixa*: isso liga o lançamento do extrato à parcela e reduz o saldo em aberto dela, **sem criar nenhuma segunda entrada ou saída**.
+
+### Como usar no dia a dia (5 minutos)
+1. **Início** mostra seis respostas: caixa agora, a receber/a pagar (7 e 30 dias, vencidos em destaque), menor saldo dos próximos 90 dias, folga em relação à reserva, DRE do mês e o que precisa da sua atenção. Cada número tem **Ver composição** com as parcelas e os lançamentos que o formam.
+2. **A receber e a pagar → Cadastrar**: escolha *a receber* ou *a pagar*, quem, descrição, valor, vencimento e se repete (*Todo mês*) ou é *Parcelado*. Em "Mais opções": data prevista (se for diferente do vencimento), competência, categoria, centro de custo, conta esperada, origem, natureza e comprovante.
+3. Depois de importar/sincronizar o extrato, abra **A conferir**: o app sugere a parcela de cada lançamento (mostrando por quê: valor igual, data próxima, nome parecido, conta esperada). Só vincula sozinho o que não deixa dúvida (e só quando você clica em *Confirmar*). O que for ambíguo você escolhe.
+4. Para dar baixa manual: clique na parcela → escolha o lançamento e o valor → **Dar baixa**. Pagamento parcial, vários lançamentos para uma parcela e um lançamento para várias parcelas funcionam. **Desfazer** devolve o lançamento (nada é apagado; fica no histórico).
+5. **Taxa retida, desconto e diferença** são ajustes próprios (sem movimento bancário). *Diferença* exige um motivo. Estorno reabre o saldo da parcela.
+6. **Caixa projetado**: 7, 30 ou 90 dias, por conta e consolidado; menor saldo e dia; folga ou falta em relação à reserva mínima (você define). Alerta quando **uma conta** ficaria negativa mesmo com o total positivo.
+7. **DRE do mês**: por **competência**, com previsto × realizado, margem e a lista do que compõe cada linha.
+
+### Regras importantes (e o que o app NÃO inventa)
+- **Mês do dinheiro ≠ mês da receita.** Serviço de outubro recebido em novembro: caixa de novembro, DRE de outubro (competência da parcela).
+- **Só contrato confirmado e obrigação assumida** entram no caixa projetado e na DRE. Estimativas e oportunidades ficam num **cenário opcional** separado (oportunidade só entra com probabilidade, ponderada, e rotulada como não garantida).
+- **Vencidos:** pagamento vencido e em aberto sai do caixa projetado **hoje**; recebimento vencido **não entra** (data incerta), mas aparece listado.
+- **Saldo-base:** cada conta parte do saldo mais recente que o app consegue justificar (fim do último extrato OFX, ou última sincronização da API) e mostra a **data** e as **ressalvas** (extrato atrasado, CDI desatualizado, sem extrato). O CDI conta como caixa por padrão (dá para desligar). Compras pendentes do cartão de limite já reduzem o saldo/limite e **não** são descontadas de novo. Se o extrato estiver atrasado, as previsões entre a data do extrato e hoje são aplicadas nas próprias datas e a conta fica marcada com ressalva.
+- **Cartão de crédito:** compra no cartão entra na DRE na sua competência, mas só sai do caixa no **pagamento da fatura** (natureza *Pagamento de fatura*, que fica **fora da DRE**). Cartão da Conta Simples (limite pré-depositado): a compra sai do limite; compra com data de hoje ou passada já está no saldo/limite e não é projetada.
+- **Fora da DRE operacional, sempre:** transferências, aplicações/resgates, aportes, distribuição de lucros, principal de empréstimo e fatura de cartão. **Pró-labore** é despesa administrativa; **juros** de empréstimo vão para o resultado financeiro.
+- **Lançamentos históricos** (já classificados, sem obrigação) entram na DRE no mês do banco, marcados como **competência presumida** até você revisar. Se depois forem ligados a uma parcela, a parte ligada passa a valer pela parcela (nunca soma duas vezes).
+- **Sem linha na DRE = fora dos totais, à vista.** Categoria de despesa nova precisa de uma linha (custos, comerciais, administrativas...). Enquanto não definir, o item aparece como pendência e não entra no resultado. Despesa de categoria "Tráfego pago", por exemplo, depende de você dizer se é custo da entrega ou despesa comercial.
+- **A DRE é gerencial**, não é demonstração contábil oficial.
+- Os totais semanais da planilha antiga **não** foram importados (misturam previsto e realizado).
+
+### Migração e backup
+Ao abrir um banco anterior, o app faz um **backup automático** em `data/backups/pre_gestao_*.db` antes de criar as tabelas novas. Transações, classificações, vínculos, saldos e posições existentes não são alterados.
+
 ## Como funciona
 
 **Saldo calculado** = saldo inicial + entradas − saídas, somando os lançamentos de `data do saldo inicial` até a data escolhida. O saldo inicial vale no *início* do dia informado (lançamentos desse dia entram; os anteriores são ignorados e avisados). O painel compara o calculado com o saldo que o próprio extrato informa (`LEDGERBAL`), data a data.
@@ -79,7 +107,8 @@ Para recuperar: feche o app e substitua `data/caixa_qcm.db` pelo arquivo do back
 ## Estrutura
 ```
 app.py            interface Streamlit
-caixa/            db, ofx, importer, ledger, recon, export, money, timeutil, demo
+caixa/            db, ofx, importer, ledger, recon, export, money, timeutil, demo, contasimples, rotina,
+                  obrigacoes, baixas, posicao, projecao, dre, inicio, ui_gestao
 demo/             OFX fictícios (+ gerar_ofx_demo.py)
 tests/            reimportação, transferências, saldos, UI
 ```

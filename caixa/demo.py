@@ -37,6 +37,32 @@ def seed(conn) -> bool:
     return True
 
 
+def seed_gestao(conn) -> bool:
+    """Contas a receber/pagar de exemplo (datas relativas a hoje), para ver a tela Início preenchida."""
+    from datetime import timedelta
+
+    from . import obrigacoes as ob
+    from .timeutil import today_sp
+    if conn.execute("SELECT COUNT(*) FROM obligations").fetchone()[0]:
+        return False
+    pag = conn.execute("SELECT id FROM accounts WHERE name='PagBank'").fetchone()[0]
+    cs = conn.execute("SELECT id FROM accounts WHERE name='Conta Simples'").fetchone()[0]
+    t = today_sp()
+    iso = lambda n: (t + timedelta(days=n)).isoformat()  # noqa: E731
+    ob.create_obligation(conn, direction="receber", description="Mensalidade (exemplo)", counterparty="Cliente Exemplo A",
+                         amount_cents=300_000, due_date=iso(5), recurrence={"months": 6}, expected_account_id=pag, category="Serviços")
+    ob.create_obligation(conn, direction="receber", description="Projeto único (exemplo)", counterparty="Cliente Exemplo B",
+                         amount_cents=450_000, due_date=iso(-3), expected_account_id=pag, category="Serviços")
+    ob.create_obligation(conn, direction="receber", description="Possível contrato (exemplo)", counterparty="Lead Exemplo",
+                         amount_cents=800_000, due_date=iso(20), origin="oportunidade", probability_pct=30, expected_account_id=pag)
+    ob.create_obligation(conn, direction="pagar", description="Aluguel (exemplo)", counterparty="Locador Exemplo",
+                         amount_cents=250_000, due_date=iso(9), recurrence={"months": 6}, expected_account_id=pag, category="Aluguel")
+    ob.create_obligation(conn, direction="pagar", description="Ferramentas (exemplo)", counterparty="Software Exemplo",
+                         amount_cents=29_900, due_date=iso(2), recurrence={"months": 6}, expected_account_id=cs, category="Ferramentas")
+    return True
+
+
 if __name__ == "__main__":
     c = connect()
     print("Base de demonstração criada." if seed(c) else "Base já existe; nada a fazer.")
+    seed_gestao(c)

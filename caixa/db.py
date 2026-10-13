@@ -128,6 +128,88 @@ CREATE TABLE IF NOT EXISTS dup_flags (
     updated_at TEXT NOT NULL
 );
 
+
+-- ===================== Gestão financeira: previsto (contas a receber/pagar) =====================
+-- Nada aqui altera ou duplica movimentos bancários: as baixas (allocations) só ligam um lançamento do extrato
+-- a uma parcela e reduzem o saldo em aberto dela.
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS obligations (
+    id INTEGER PRIMARY KEY,
+    direction TEXT NOT NULL CHECK (direction IN ('receber','pagar')),
+    nature TEXT NOT NULL DEFAULT 'operacional',
+    origin TEXT NOT NULL DEFAULT 'contrato' CHECK (origin IN ('contrato','obrigacao','estimativa','oportunidade')),
+    probability_pct INTEGER,                       -- só para oportunidade; nunca vira "dinheiro garantido"
+    expected_account_id INTEGER REFERENCES accounts(id),
+    note TEXT NOT NULL DEFAULT '',
+    attachment_path TEXT,
+    recurrence TEXT,                               -- JSON com frequência e dia (ou NULL)
+    created_at TEXT NOT NULL,
+    cancelled_at TEXT
+);
+
+-- Cada parcela guarda seus próprios atributos: editar a série futura não reescreve parcelas já liquidadas.
+CREATE TABLE IF NOT EXISTS installments (
+    id INTEGER PRIMARY KEY,
+    obligation_id INTEGER NOT NULL REFERENCES obligations(id),
+    number INTEGER NOT NULL,
+    of_total INTEGER,
+    nature TEXT NOT NULL DEFAULT 'operacional',
+    description TEXT NOT NULL,
+    counterparty TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',
+    cost_center TEXT NOT NULL DEFAULT '',
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    due_date TEXT NOT NULL,                        -- vencimento
+    expected_date TEXT NOT NULL,                   -- data prevista de recebimento/pagamento (pode diferir)
+    competence TEXT NOT NULL,                      -- AAAA-MM (mês em que a receita/despesa pertence)
+    expected_account_id INTEGER REFERENCES accounts(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    cancelled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_inst_due ON installments(due_date);
+
+CREATE TABLE IF NOT EXISTS allocations (
+    id INTEGER PRIMARY KEY,
+    installment_id INTEGER NOT NULL REFERENCES installments(id),
+    tx_id INTEGER REFERENCES transactions(id),     -- NULL em taxa/desconto/diferença (ajustes sem movimento bancário)
+    kind TEXT NOT NULL CHECK (kind IN ('pagamento','taxa','desconto','diferenca','estorno')),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    undone_at TEXT,                                -- desfazer = preencher; o registro nunca é apagado
+    CHECK ((kind IN ('pagamento','estorno') AND tx_id IS NOT NULL) OR (kind NOT IN ('pagamento','estorno') AND tx_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS ix_alloc_tx ON allocations(tx_id);
+CREATE INDEX IF NOT EXISTS ix_alloc_inst ON allocations(installment_id);
+
+CREATE TABLE IF NOT EXISTS gestao_log (
+    id INTEGER PRIMARY KEY,
+    at TEXT NOT NULL,
+    entity TEXT NOT NULL,
+    entity_id INTEGER,
+    action TEXT NOT NULL,
+    before_json TEXT,
+    after_json TEXT
+);
+
+-- Competência (mês da DRE) de lançamentos bancários históricos que não estão ligados a obrigações.
+CREATE TABLE IF NOT EXISTS tx_competence (
+    tx_id INTEGER PRIMARY KEY REFERENCES transactions(id),
+    competence TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Em que linha da DRE cada categoria cai.
+CREATE TABLE IF NOT EXISTS category_map (
+    category TEXT PRIMARY KEY,
+    dre_line TEXT NOT NULL
+);
+
 -- Lançamentos que NÃO são dinheiro novo (ex.: pagamento de fatura de cartão pago com o limite já depositado):
 -- continuam guardados, mas ficam fora de saldos e listas.
 CREATE TABLE IF NOT EXISTS ignored_tx (
@@ -157,7 +239,30 @@ BEGIN SELECT RAISE(ABORT, 'lançamentos bancários originais são imutáveis'); 
 """
 
 
+def _backup_before_migration(path: Path) -> Path | None:
+    """Se já existe um banco anterior à gestão financeira, guarda uma cópia consistente antes de migrar."""
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+    probe = sqlite3.connect(str(path))
+    try:
+        names = {r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "transactions" not in names or "installments" in names:
+            return None
+        dest_dir = path.parent / "backups"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"pre_gestao_{now_iso()[:19].replace(':', '').replace('-', '').replace('T', '_')}.db"
+        out = sqlite3.connect(str(dest))
+        try:
+            probe.backup(out)
+        finally:
+            out.close()
+        return dest
+    finally:
+        probe.close()
+
+
 def connect(path: str | Path | None = None) -> sqlite3.Connection:
+    _backup_before_migration(Path(path or db_path()))
     conn = sqlite3.connect(str(path or db_path()), check_same_thread=False)  # Streamlit roda cada rerun em outra thread
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

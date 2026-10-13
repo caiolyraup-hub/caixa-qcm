@@ -8,7 +8,7 @@ from caixa.db import connect
 from caixa.demo import seed
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
-PAGES = ["Painel", "Rotina diária", "Importar extrato", "A identificar", "Investigar divergências", "Contas", "Exportar e backup"]
+PAGES = ["Início", "A receber e a pagar", "Caixa projetado", "DRE do mês", "Saldos por conta", "Rotina diária", "Importar extrato", "A identificar", "Investigar divergências", "Contas", "Exportar e backup"]
 
 
 @pytest.fixture
@@ -162,7 +162,7 @@ def test_cdi_ui_flow_position_suggestion_and_painel(tmp_path, monkeypatch):
     pag = create_account(c, "PagBank", 999_999, "2026-10-01")             # saldo inicial errado de propósito
     commit_import(c, plan_import(c, pag, "x.ofx", pagbank_ofx(ROWS)))
     at = AppTest.from_file(APP, default_timeout=30).run()
-    at.sidebar.radio[0].set_value("Painel").run()
+    at.sidebar.radio[0].set_value("Saldos por conta").run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("nenhuma posição aplicada" in w.value for w in at.warning)  # avisa que falta informar o CDI
     at.sidebar.radio[0].set_value("Contas").run()
@@ -173,6 +173,6 @@ def test_cdi_ui_flow_position_suggestion_and_painel(tmp_path, monkeypatch):
     next(b for b in at.button if b.label == "Registrar posição").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert connect().execute("SELECT amount_cents FROM investment_positions").fetchone()[0] == 593_100
-    at.sidebar.radio[0].set_value("Painel").run()
+    at.sidebar.radio[0].set_value("Saldos por conta").run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("R$ 5.931,00" in m.value for m in at.metric)               # caixa total = 0 disponível + CDI
