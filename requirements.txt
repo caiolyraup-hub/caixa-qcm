@@ -1,0 +1,5 @@
+streamlit>=1.46
+pandas>=2.2
+tzdata
+requests>=2.31
+pytest>=8
